@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Etsy Token Al</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+  button { background: #F1641E; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #d4541a; }
+  .token-box { background: #f4f4f4; border: 1px solid #ddd; padding: 15px; border-radius: 6px; word-break: break-all; margin-top: 20px; }
+  .copy-btn { background: #333; margin-top: 10px; font-size: 14px; padding: 8px 16px; }
+  .status { margin-top: 15px; color: #666; }
+  .error { color: red; }
+  .success { color: green; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h2>🛒 Etsy Access Token Al</h2>
+<p>Aşağıdaki butona tıkla, Etsy hesabınla giriş yap ve izin ver. Token otomatik gelecek.</p>
+
+<button onclick="startAuth()">Etsy ile Bağlan</button>
+
+<div class="status" id="status"></div>
+<div id="result"></div>
+
+<script>
+const CLIENT_ID = 'i9zth3tgee772v54aj7sppjy';
+const REDIRECT_URI = 'https://preeminent-beijinho-62b567.netlify.app';
+const SCOPE = 'transactions_r';
+
+function generateRandomString(length) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let result = '';
+  const arr = new Uint8Array(length);
+  crypto.getRandomValues(arr);
+  arr.forEach(x => result += chars[x % chars.length]);
+  return result;
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function startAuth() {
+  const verifier = generateRandomString(64);
+  const challenge = await generateCodeChallenge(verifier);
+  const state = generateRandomString(16);
+
+  localStorage.setItem('pkce_verifier', verifier);
+  localStorage.setItem('oauth_state', state);
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPE,
+    state: state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256'
+  });
+
+  document.getElementById('status').textContent = 'Etsy login sayfasına yönlendiriliyorsunuz...';
+  window.location.href = `https://www.etsy.com/oauth/connect?${params}`;
+}
+
+async function handleCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+
+  if (error) {
+    document.getElementById('status').innerHTML = `<span class="error">Hata: ${error}</span>`;
+    return;
+  }
+
+  if (!code) return;
+
+  const savedState = localStorage.getItem('oauth_state');
+  if (state !== savedState) {
+    document.getElementById('status').innerHTML = '<span class="error">State uyuşmuyor, güvenlik hatası.</span>';
+    return;
+  }
+
+  const verifier = localStorage.getItem('pkce_verifier');
+  document.getElementById('status').textContent = 'Token alınıyor...';
+
+  try {
+    const res = await fetch('https://api.etsy.com/v3/public/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        code: code,
+        code_verifier: verifier
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.access_token) {
+      document.getElementById('status').innerHTML = '<span class="success">✅ Token başarıyla alındı!</span>';
+      document.getElementById('result').innerHTML = `
+        <div class="token-box">
+          <strong>Access Token:</strong><br>
+          <span id="token">${data.access_token}</span>
+        </div>
+        <button class="copy-btn" onclick="copyToken()">📋 Kopyala</button>
+        ${data.refresh_token ? `<div class="token-box" style="margin-top:10px"><strong>Refresh Token:</strong><br>${data.refresh_token}</div>` : ''}
+        <p style="margin-top:15px; color:#666;">Bu token'ı n8n HTTP Request node'unda Authorization header'ına yapıştır:<br>
+        <code>Authorization: Bearer [token]</code></p>
+      `;
+      localStorage.removeItem('pkce_verifier');
+      localStorage.removeItem('oauth_state');
+    } else {
+      document.getElementById('status').innerHTML = `<span class="error">Hata: ${JSON.stringify(data)}</span>`;
+    }
+  } catch (err) {
+    document.getElementById('status').innerHTML = `<span class="error">Fetch hatası: ${err.message}</span>`;
+  }
+}
+
+function copyToken() {
+  const token = document.getElementById('token').textContent;
+  navigator.clipboard.writeText(token).then(() => alert('Token kopyalandı!'));
+}
+
+handleCallback();
+</script>
+</body>
+</html>
