@@ -64,7 +64,8 @@ async function startAuth() {
     code_challenge_method: 'S256'
   });
 
-  document.getElementById('status').textContent = 'Etsy login sayfasına yönlendiriliyorsunuz...';
+  document.getElementById('status').innerHTML = `Etsy login sayfasına yönlendiriliyorsunuz...<br><br><strong>Code Verifier (kopyala):</strong><br><code style="word-break:break-all;background:#eee;padding:5px;display:block">${verifier}</code>`;
+  
   window.location.href = `https://www.etsy.com/oauth/connect?${params}`;
 }
 
